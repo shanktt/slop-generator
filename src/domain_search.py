@@ -27,6 +27,7 @@ class DomainSearcher:
             ".com",
             ".co",
             ".ai",
+            ".net",
         ]
 
     def get_domains(self, prompt):
