@@ -5,6 +5,7 @@
 
 import argparse
 import socket
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List
 
 import tqdm
@@ -12,6 +13,7 @@ import whois
 from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel, Field
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from tabulate import tabulate
 
 load_dotenv()
@@ -33,14 +35,18 @@ class DomainSearcher:
         ]
 
     def get_domains(self, prompt):
-        with tqdm.tqdm(total=1, desc="Generating domains") as pbar:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+        ) as progress:
+            _ = progress.add_task("Generating domains...", total=None)
             response = self.client.responses.parse(
                 model="gpt-4o-mini",
                 instructions="You are an experment at recommending a list of potential domains given a description of a product or business. The domains you suggest should not contain any subdomains, tlds, etc. Just the plain name itself",
                 input=prompt,
                 text_format=Domains,
             )
-            pbar.update(1)
             return response.output_parsed
 
     def check_domain_availability(self, domain: str) -> Dict[str, any]:
@@ -89,14 +95,42 @@ class DomainSearcher:
 
     def check_domains(self, domains: List[str]) -> List[Dict[str, any]]:
         results = []
-        with tqdm.tqdm(
-            total=len(domains) * len(self.tlds_to_check), desc="Checking domains"
-        ) as pbar:
-            for domain in domains:
-                for tld in self.tlds_to_check:
-                    domain_with_tld = domain + tld
-                    result = self.check_domain_availability(domain_with_tld)
-                    results.append(result)
+
+        # Create a list of all domain combinations to check
+        domain_combinations = []
+        for domain in domains:
+            for tld in self.tlds_to_check:
+                domain_combinations.append(domain + tld)
+
+        # Use ThreadPoolExecutor for parallel domain checking
+        # Adjust max_workers based on your needs (10-20 is usually good for network I/O)
+        max_workers = min(20, len(domain_combinations))
+
+        with tqdm.tqdm(total=len(domain_combinations), desc="Checking domains") as pbar:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tasks to the executor
+                future_to_domain = {
+                    executor.submit(self.check_domain_availability, domain): domain
+                    for domain in domain_combinations
+                }
+
+                # Process completed tasks as they finish
+                for future in as_completed(future_to_domain):
+                    domain = future_to_domain[future]
+                    try:
+                        result = future.result()
+                        results.append(result)
+                    except Exception as e:
+                        # If there's an error, create an error result
+                        results.append(
+                            {
+                                "domain": domain,
+                                "available": None,
+                                "error": str(e),
+                                "registrar": None,
+                                "expiration_date": None,
+                            }
+                        )
                     pbar.update(1)
 
         return results
