@@ -1,8 +1,3 @@
-# Take in prompt
-# get list of strings from gpt
-# for each string check if domains are available
-# pretty print the results
-
 import argparse
 import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
