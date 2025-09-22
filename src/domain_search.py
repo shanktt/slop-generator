@@ -138,7 +138,13 @@ class DomainSearcher:
         YELLOW = "\033[93m"
         RESET = "\033[0m"
 
-        results = sorted(results, key=lambda x: x["domain"].split(".")[0])
+        results = sorted(
+            results,
+            key=lambda x: (
+                x["domain"].split(".", 1)[0],
+                x["domain"].split(".", 1)[1],
+            ),
+        )
 
         table_data = []
 
