@@ -1,4 +1,5 @@
 import argparse
+import logging
 import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List
@@ -10,8 +11,11 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from tabulate import tabulate
+from whois import logger as whois_logger
 
 load_dotenv()
+
+whois_logger.setLevel(logging.CRITICAL)
 
 
 class Domains(BaseModel):
@@ -21,14 +25,18 @@ class Domains(BaseModel):
 
 
 class DomainSearcher:
-    def __init__(self):
+    def __init__(self, domains: List[str]):
         self.client = OpenAI()
-        self.tlds_to_check = [
-            ".com",
-            ".co",
-            ".ai",
-            ".net",
-        ]
+        self.tlds_to_check = (
+            [
+                ".com",
+                ".co",
+                ".ai",
+                ".net",
+            ]
+            if not domains
+            else domains
+        )
 
     def get_domains(self, prompt):
         with Progress(
@@ -125,11 +133,12 @@ class DomainSearcher:
         self._pretty_print_results(results)
 
     def _pretty_print_results(self, results: List[Dict[str, any]]):
-        """Simple pretty printing showing only domain and availability"""
         GREEN = "\033[92m"
         RED = "\033[91m"
         YELLOW = "\033[93m"
         RESET = "\033[0m"
+
+        results = sorted(results, key=lambda x: x["domain"].split(".")[0])
 
         table_data = []
 
@@ -153,6 +162,13 @@ class DomainSearcher:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("prompt", type=str)
+    parser.add_argument(
+        "--domains",
+        nargs="*",
+        required=False,
+        default=None,
+        help="List of TLDs to check (e.g., .com .ai .net)",
+    )
     args = parser.parse_args()
-    domain_searcher = DomainSearcher()
+    domain_searcher = DomainSearcher(args.domains)
     domain_searcher.run(args.prompt)
